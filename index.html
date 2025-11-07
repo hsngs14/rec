@@ -1,409 +1,152 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  
-<meta charset="utf-8">
-<title>Camera Capabilities Dashboard</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<style>
-  :root { --pad: 12px; }
-  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background:#0b0d10; color:#e8eef6; }
-  header { padding: var(--pad) calc(2*var(--pad)); border-bottom: 1px solid #1b232d; display:flex; align-items:center; gap:12px;}
-  main { display:grid; grid-template-columns: 420px 1fr; gap: 16px; padding: 16px; }
-  .panel { background:#121820; border:1px solid #1b232d; border-radius:12px; padding:16px; }
-  h2 { margin:0 0 8px 0; font-size:18px; }
-  h3 { margin:16px 0 8px 0; font-size:15px; color:#a9b8c9; }
-  label { display:block; font-size:12px; color:#a9b8c9; margin-top:10px; }
-  input[type="range"], select, input[type="number"], button { width:100%; padding:8px; background:#0f141b; color:#e8eef6; border:1px solid #263342; border-radius:8px; }
-  input[type="checkbox"] { transform: scale(1.2); vertical-align: middle; margin-right:6px; }
-  .row { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .kv { display:grid; grid-template-columns:auto 1fr; gap:6px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; }
-  .kv div:nth-child(odd){ color:#7fa1c6; }
-  pre { background:#0f141b; border:1px solid #263342; padding:10px; border-radius:8px; overflow:auto; max-height:240px; }
-  video { width:100%; border-radius:12px; border:1px solid #1b232d; background:#000; }
-  .pill { display:inline-block; padding:4px 8px; border:1px solid #263342; border-radius:999px; font-size:12px; color:#a9b8c9; }
-  .btnrow { display:flex; gap:8px; align-items:center; }
-  .ok { color:#8ff0a4; }
-  .warn { color:#ffdd88; }
-  .err { color:#ff9aa2; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>10‑Second Video Recorder</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; display: grid; place-items: center; min-height: 100vh; background: Canvas; color: CanvasText; }
+    .card { width: min(720px, 92vw); border: 1px solid rgba(0,0,0,.1); border-radius: 18px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,.08); background: Field; }
+    h1 { font-size: 1.25rem; margin: 0 0 12px; }
+    p.note { margin: 8px 0 16px; font-size: .95rem; opacity: .8; }
+    video { width: 100%; max-height: 60vh; background: #000; border-radius: 14px; }
+    .controls { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+    button { padding: 10px 14px; border-radius: 12px; border: 0; font-weight: 600; cursor: pointer; background: #4f46e5; color: white; }
+    button.secondary { background: #6b7280; }
+    button.danger { background: #ef4444; }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+    .status { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .spacer { flex: 1; }
+    a.download { text-decoration: none; font-weight: 600; }
+    .hidden { display: none; }
+    .chip { display:inline-block; padding: 4px 8px; border-radius: 999px; background: color-mix(in srgb, CanvasText 12%, transparent); font-size: .8rem; }
+  </style>
 </head>
 <body>
-  <header>
-    <strong>Camera Capabilities Dashboard</strong>
-    <span id="status" class="pill">idle</span>
-    <span id="fps" class="pill">FPS: —</span>
-  </header>
+  <div class="card">
+    <h1>10‑Second Video Recorder</h1>
+    <p class="note">Click <b>Start 10s Recording</b>. The video will auto‑download when finished. If camera access fails from a local file, open this page via <span class="chip">http://localhost</span> (secure context is required by some browsers).</p>
 
-  <main>
-    <!-- LEFT: Preview & quick controls -->
-    <section class="panel">
-      <h2>Preview</h2>
-      <video id="preview" autoplay playsinline muted></video>
-      <div class="btnrow" style="margin-top:10px">
-        <label class="pill"><input type="checkbox" id="mirror"> Mirror preview</label>
-        <label class="pill"><input type="checkbox" id="autofocus"> Continuous AF (if supported)</label>
-        <label class="pill"><input type="checkbox" id="torch"> Torch</label>
-      </div>
+    <video id="preview" playsinline autoplay muted></video>
 
-      <h3>Choose Camera</h3>
-      <div class="row">
-        <select id="deviceSelect"></select>
-        <button id="openBtn">Open Camera</button>
-      </div>
+    <div class="controls">
+      <button id="startBtn">Start 10s Recording</button>
+      <button id="stopBtn" class="danger" disabled>Stop now</button>
+      <span class="spacer"></span>
+      <span class="status" id="status">Idle</span>
+      <a id="downloadLink" class="download hidden" href="#" download>Download</a>
+    </div>
+  </div>
 
-      <h3>Core Track Constraints</h3>
-      <div class="row">
-        <div>
-          <label>Width (ideal)</label>
-          <input type="number" id="w" min="160" value="1280">
-        </div>
-        <div>
-          <label>Height (ideal)</label>
-          <input type="number" id="h" min="120" value="720">
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label>Frame rate (ideal)</label>
-          <input type="number" id="fpsIdeal" step="1" value="30">
-        </div>
-        <div>
-          <label>Exact constraints?</label>
-          <select id="exactness">
-            <option value="ideal" selected>Ideal</option>
-            <option value="exact">Exact</option>
-          </select>
-        </div>
-      </div>
-      <button id="applyTrack">Apply Track Constraints</button>
+  <script>
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const statusEl = document.getElementById('status');
+    const videoEl = document.getElementById('preview');
+    const downloadLink = document.getElementById('downloadLink');
 
-      <h3>ImageCapture Controls (applied live)</h3>
-      <div id="icControls"></div>
-    </section>
+    let mediaStream;         // MediaStream from getUserMedia
+    let mediaRecorder;       // MediaRecorder instance
+    let chunks = [];         // Recorded Blob parts
+    let stopTimer;           // Timer to auto‑stop after 10s
 
-    <!-- RIGHT: Capabilities & settings dump -->
-    <section class="panel">
-      <h2>Capabilities & Settings</h2>
-      <div class="kv" id="quick">
-        <div>Device:</div><div id="q_device">—</div>
-        <div>Facing:</div><div id="q_facing">—</div>
-        <div>Resolution:</div><div id="q_res">—</div>
-        <div>FPS (target):</div><div id="q_fps">—</div>
-        <div>Torch:</div><div id="q_torch">—</div>
-      </div>
-
-      <h3>MediaTrackCapabilities</h3>
-      <pre id="capOut">—</pre>
-
-      <h3>MediaTrackSettings</h3>
-      <pre id="setOut">—</pre>
-
-      <h3>Supported Constraints</h3>
-      <pre id="supOut">—</pre>
-
-      <h3>ImageCapture.getPhotoCapabilities()</h3>
-      <pre id="icOut">—</pre>
-    </section>
-  </main>
-
-<script>
-(async function(){
-  const statusEl = document.getElementById('status');
-  const fpsEl = document.getElementById('fps');
-  const videoEl = document.getElementById('preview');
-  const deviceSel = document.getElementById('deviceSelect');
-  const openBtn = document.getElementById('openBtn');
-  const wEl = document.getElementById('w');
-  const hEl = document.getElementById('h');
-  const fpsIdealEl = document.getElementById('fpsIdeal');
-  const exactnessEl = document.getElementById('exactness');
-  const applyTrackBtn = document.getElementById('applyTrack');
-  const mirrorEl = document.getElementById('mirror');
-  const torchEl = document.getElementById('torch');
-  const afEl = document.getElementById('autofocus');
-
-  const capOut = document.getElementById('capOut');
-  const setOut = document.getElementById('setOut');
-  const supOut = document.getElementById('supOut');
-  const icOut = document.getElementById('icOut');
-
-  const q_device = document.getElementById('q_device');
-  const q_facing = document.getElementById('q_facing');
-  const q_res = document.getElementById('q_res');
-  const q_fps = document.getElementById('q_fps');
-  const q_torch = document.getElementById('q_torch');
-
-  const icControls = document.getElementById('icControls');
-
-  let stream = null;
-  let track = null;
-  let imageCapture = null;
-  let fpsTimer = null;
-  let lastRAF = 0, frameCount = 0;
-
-  function logStatus(txt, cls='') {
-    statusEl.textContent = txt;
-    statusEl.className = 'pill ' + cls;
-  }
-
-  function ensureSecure() {
-    if (!window.isSecureContext) {
-      alert('This page must be opened via https:// or http://localhost for camera access.');
-    }
-  }
-
-  async function listDevices() {
-    const devs = await navigator.mediaDevices.enumerateDevices();
-    const cams = devs.filter(d => d.kind === 'videoinput');
-    deviceSel.innerHTML = '';
-    cams.forEach((d,i) => {
-      const opt = document.createElement('option');
-      opt.value = d.deviceId;
-      opt.textContent = d.label || `Camera ${i+1}`;
-      deviceSel.appendChild(opt);
-    });
-  }
-
-  async function openCamera(deviceId=null) {
-    if (stream) {
-      stream.getTracks().forEach(t=>t.stop());
-      stream = null; track = null; imageCapture = null;
-    }
-    const ideal = (exactnessEl.value === 'ideal');
-    const widthC  = ideal ? {ideal: +wEl.value||undefined} : {exact: +wEl.value||undefined};
-    const heightC = ideal ? {ideal: +hEl.value||undefined} : {exact: +hEl.value||undefined};
-    const fpsC    = ideal ? {ideal: +fpsIdealEl.value||undefined} : {exact: +fpsIdealEl.value||undefined};
-
-    const constraints = {
-      video: {
-        deviceId: deviceId ? { exact: deviceId } : undefined,
-        width: widthC, height: heightC, frameRate: fpsC
-      },
-      audio: false
-    };
-
-    logStatus('Requesting…');
-    stream = await navigator.mediaDevices.getUserMedia(constraints);
-    videoEl.srcObject = stream;
-    track = stream.getVideoTracks()[0];
-
-    // ImageCapture (some Android devices support many options)
-    try {
-      imageCapture = new ImageCapture(track);
-      await imageCapture.getPhotoCapabilities(); // may throw if unsupported
-    } catch(e) {
-      imageCapture = null;
+    async function ensureStream() {
+      if (mediaStream && mediaStream.active) return mediaStream;
+      // Ask for camera + mic. You can set audio:false to drop mic.
+      mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      videoEl.srcObject = mediaStream;
+      return mediaStream;
     }
 
-    // mirror preview
-    applyMirror();
-
-    // update UIs
-    await updateInfo();
-    await buildImageCaptureControls(); // dynamic sliders for supported options
-
-    // start FPS sampler
-    startFpsMeter();
-
-    logStatus('open', 'ok');
-  }
-
-  function applyMirror() {
-    videoEl.style.transform = mirrorEl.checked ? 'scaleX(-1)' : 'none';
-  }
-
-  // FPS measurement via rAF
-  function startFpsMeter() {
-    if (fpsTimer) cancelAnimationFrame(fpsTimer);
-    frameCount = 0; lastRAF = performance.now();
-    const tick = (t) => {
-      frameCount++;
-      const dt = t - lastRAF;
-      if (dt >= 1000) {
-        const fps = Math.round((frameCount * 1000) / dt);
-        fpsEl.textContent = `FPS: ${fps}`;
-        frameCount = 0; lastRAF = t;
+    function pickMimeType() {
+      const candidates = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm',
+        'video/mp4;codecs=h264,aac' // Only some browsers
+      ];
+      for (const type of candidates) {
+        if (MediaRecorder.isTypeSupported?.(type)) return type;
       }
-      fpsTimer = requestAnimationFrame(tick);
-    };
-    fpsTimer = requestAnimationFrame(tick);
-  }
+      return '';
+    }
 
-  async function updateInfo() {
-    if (!track) return;
-    const caps = track.getCapabilities?.();
-    const sets = track.getSettings?.();
-    const sup  = navigator.mediaDevices.getSupportedConstraints?.();
+    function resetRecorder() {
+      chunks = [];
+      clearTimeout(stopTimer);
+      stopTimer = null;
+      downloadLink.classList.add('hidden');
+      downloadLink.removeAttribute('href');
+    }
 
-    capOut.textContent = caps ? JSON.stringify(caps, null, 2) : '—';
-    setOut.textContent = sets ? JSON.stringify(sets, null, 2) : '—';
-    supOut.textContent = sup ? JSON.stringify(sup, null, 2) : '—';
-
-    q_device.textContent = track.label || '(unknown)';
-    q_facing.textContent = sets?.facingMode || '—';
-    q_res.textContent = sets?.width && sets?.height ? `${sets.width}×${sets.height}` : '—';
-    q_fps.textContent = (sets?.frameRate ? sets.frameRate.toFixed(2) : '—');
-    q_torch.textContent = caps?.torch ? 'supported' : 'no';
-
-    // ImageCapture capabilities
-    if (imageCapture) {
+    startBtn.addEventListener('click', async () => {
       try {
-        const icCaps = await imageCapture.getPhotoCapabilities();
-        icOut.textContent = JSON.stringify(icCaps, null, 2);
-      } catch (e) {
-        icOut.textContent = 'ImageCapture not supported here.';
+        startBtn.disabled = true;
+        resetRecorder();
+        await ensureStream();
+
+        const mimeType = pickMimeType();
+        mediaRecorder = new MediaRecorder(mediaStream, mimeType ? { mimeType } : {});
+
+        // Collect data as it becomes available
+        mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+
+        mediaRecorder.onstart = () => {
+          statusEl.textContent = 'Recording… 10.0s';
+          stopBtn.disabled = false;
+          // Simple countdown
+          let remaining = 10_000;
+          const tick = () => {
+            remaining -= 100;
+            if (remaining >= 0 && mediaRecorder?.state === 'recording') {
+              statusEl.textContent = `Recording… ${(remaining/1000).toFixed(1)}s`;
+              setTimeout(tick, 100);
+            }
+          };
+          setTimeout(tick, 100);
+        };
+
+        mediaRecorder.onstop = () => {
+          stopBtn.disabled = true;
+          startBtn.disabled = false;
+          const blob = new Blob(chunks, { type: mediaRecorder.mimeType || 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const ts = new Date().toISOString().replaceAll(':', '-');
+          const ext = (blob.type.includes('mp4') ? 'mp4' : 'webm');
+          downloadLink.href = url;
+          downloadLink.download = `recording-${ts}.${ext}`;
+          downloadLink.classList.remove('hidden');
+          // Auto‑trigger the download
+          downloadLink.click();
+          statusEl.textContent = 'Done. Saved to your downloads.';
+        };
+
+        mediaRecorder.start(100); // gather data every 100ms
+        // Auto‑stop after 10 seconds
+        stopTimer = setTimeout(() => {
+          if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+        }, 10_000);
+      } catch (err) {
+        console.error(err);
+        startBtn.disabled = false;
+        statusEl.textContent = 'Error: ' + (err?.message || err);
+        alert('Error starting camera/recorder: ' + (err?.message || err));
       }
-    } else {
-      icOut.textContent = 'ImageCapture not supported here.';
-    }
-  }
-
-  // Helpers to add UI controls for ImageCapture
-  function addRangeControl(parent, labelText, cap, getterName, setterName, optionKey) {
-    if (!cap || typeof cap.min !== 'number' || typeof cap.max !== 'number') return;
-    const label = document.createElement('label');
-    label.textContent = `${labelText} (${cap.min}..${cap.max}${cap.step?` step ${cap.step}`:''})`;
-    const input = document.createElement('input');
-    input.type = 'range';
-    input.min = cap.min;
-    input.max = cap.max;
-    input.step = cap.step || 1;
-    input.value = cap.current ?? cap.min;
-    input.addEventListener('input', async () => {
-      try {
-        const opts = {}; opts[optionKey] = Number(input.value);
-        await imageCapture.setOptions(opts);
-        await updateInfo();
-      } catch(e) { console.warn('setOptions failed for', optionKey, e); }
     });
-    parent.appendChild(label);
-    parent.appendChild(input);
-  }
 
-  function addEnumControl(parent, labelText, values, optionKey) {
-    if (!values || !values.length) return;
-    const label = document.createElement('label');
-    label.textContent = labelText;
-    const sel = document.createElement('select');
-    values.forEach(v => {
-      const opt = document.createElement('option');
-      opt.value = v; opt.textContent = v;
-      sel.appendChild(opt);
-    });
-    sel.addEventListener('change', async () => {
-      try {
-        const opts = {}; opts[optionKey] = sel.value;
-        await imageCapture.setOptions(opts);
-        await updateInfo();
-      } catch(e) { console.warn('setOptions failed for', optionKey, e); }
-    });
-    parent.appendChild(label);
-    parent.appendChild(sel);
-  }
-
-  async function buildImageCaptureControls() {
-    icControls.innerHTML = '';
-    if (!imageCapture) {
-      const p = document.createElement('div');
-      p.textContent = 'No ImageCapture controls available on this device.';
-      icControls.appendChild(p);
-      return;
-    }
-    try {
-      const caps = await imageCapture.getPhotoCapabilities();
-
-      // torch (also mirrored via checkbox)
-      if (typeof caps.torch === 'boolean') {
-        torchEl.disabled = false;
-      } else {
-        torchEl.disabled = true;
+    stopBtn.addEventListener('click', () => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        clearTimeout(stopTimer);
       }
+    });
 
-      // Common ranges
-      addRangeControl(icControls, 'Zoom', caps.zoom, null, null, 'zoom');
-      addRangeControl(icControls, 'Focus distance', caps.focusDistance, null, null, 'focusDistance');
-      addRangeControl(icControls, 'Exposure compensation', caps.exposureCompensation, null, null, 'exposureCompensation');
-      addRangeControl(icControls, 'Color temperature', caps.colorTemperature, null, null, 'colorTemperature');
-      addRangeControl(icControls, 'ISO', caps.iso, null, null, 'iso');
-      addRangeControl(icControls, 'Brightness', caps.brightness, null, null, 'brightness');
-      addRangeControl(icControls, 'Contrast', caps.contrast, null, null, 'contrast');
-      addRangeControl(icControls, 'Saturation', caps.saturation, null, null, 'saturation');
-      addRangeControl(icControls, 'Sharpness', caps.sharpness, null, null, 'sharpness');
-
-      // Enums / modes
-      addEnumControl(icControls, 'Focus mode', caps.focusMode?.supported || [], 'focusMode');
-      addEnumControl(icControls, 'White balance mode', caps.whiteBalanceMode?.supported || [], 'whiteBalanceMode');
-      addEnumControl(icControls, 'Exposure mode', caps.exposureMode?.supported || [], 'exposureMode');
-      addEnumControl(icControls, 'Red-eye reduction', caps.redEyeReduction?.supported || [], 'redEyeReduction');
-
-    } catch (e) {
-      icControls.textContent = 'ImageCapture capability query failed.';
-      console.warn(e);
-    }
-  }
-
-  // Apply track constraints from the left panel
-  async function applyTrackConstraints() {
-    if (!track) return;
-    const ideal = (exactnessEl.value === 'ideal');
-    const cs = {};
-    const w = +wEl.value || undefined;
-    const h = +hEl.value || undefined;
-    const f = +fpsIdealEl.value || undefined;
-    if (w) cs.width = ideal ? { ideal: w } : { exact: w };
-    if (h) cs.height = ideal ? { ideal: h } : { exact: h };
-    if (f) cs.frameRate = ideal ? { ideal: f } : { exact: f };
-
-    logStatus('Applying constraints…');
-    try {
-      await track.applyConstraints(cs);
-      logStatus('constraints applied', 'ok');
-    } catch (e) {
-      logStatus('constraints failed', 'err');
-      alert('applyConstraints() failed: ' + e.message);
-    }
-    await updateInfo();
-  }
-
-  // Torch & AF toggles via ImageCapture (where supported)
-  torchEl.addEventListener('change', async () => {
-    if (!imageCapture) return;
-    try {
-      await imageCapture.setOptions({ torch: torchEl.checked });
-      await updateInfo();
-    } catch (e) { console.warn('torch setOptions failed', e); }
-  });
-  afEl.addEventListener('change', async () => {
-    if (!imageCapture) return;
-    try {
-      const mode = afEl.checked ? 'continuous' : 'manual';
-      await imageCapture.setOptions({ focusMode: mode });
-      await updateInfo();
-    } catch (e) { console.warn('focusMode setOptions failed', e); }
-  });
-
-  mirrorEl.addEventListener('change', applyMirror);
-  applyTrackBtn.addEventListener('click', applyTrackConstraints);
-  openBtn.addEventListener('click', async () => {
-    await openCamera(deviceSel.value || null);
-  });
-
-  // Populate devices then open default camera
-  ensureSecure();
-  await listDevices();
-  // First open with generic constraints to get labels; then refresh device list with labels
-  try {
-    await openCamera();
-    await listDevices();
-  } catch (e) {
-    logStatus('error', 'err');
-    alert('Failed to open camera: ' + e.message + '\nOpen this over https:// or http://localhost and allow camera access.');
-  }
-
-  // React to device changes (e.g., plugging a new webcam)
-  navigator.mediaDevices.addEventListener('devicechange', listDevices);
-})();
-</script>
+    // Clean up when the page unloads
+    window.addEventListener('beforeunload', () => {
+      mediaRecorder?.state === 'recording' && mediaRecorder.stop();
+      mediaStream?.getTracks().forEach(t => t.stop());
+    });
+  </script>
 </body>
 </html>
