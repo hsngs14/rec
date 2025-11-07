@@ -1,73 +1,408 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Mirror Recorder — 10s</title>
-  <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; text-align:center; padding:20px; }
-    #preview { border:1px solid #ccc; width:480px; height:360px; /* mirrored visually */ transform: scaleX(-1); -webkit-transform: scaleX(-1); }
-    canvas { display:none; } /* hidden: used for recording */
-    button { margin-top:12px; padding:8px 14px; font-size:16px; }
-    #count { font-weight:600; margin-left:10px; }
-  </style>
+<meta charset="utf-8">
+<title>Camera Capabilities Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { --pad: 12px; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background:#0b0d10; color:#e8eef6; }
+  header { padding: var(--pad) calc(2*var(--pad)); border-bottom: 1px solid #1b232d; display:flex; align-items:center; gap:12px;}
+  main { display:grid; grid-template-columns: 420px 1fr; gap: 16px; padding: 16px; }
+  .panel { background:#121820; border:1px solid #1b232d; border-radius:12px; padding:16px; }
+  h2 { margin:0 0 8px 0; font-size:18px; }
+  h3 { margin:16px 0 8px 0; font-size:15px; color:#a9b8c9; }
+  label { display:block; font-size:12px; color:#a9b8c9; margin-top:10px; }
+  input[type="range"], select, input[type="number"], button { width:100%; padding:8px; background:#0f141b; color:#e8eef6; border:1px solid #263342; border-radius:8px; }
+  input[type="checkbox"] { transform: scale(1.2); vertical-align: middle; margin-right:6px; }
+  .row { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:6px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; }
+  .kv div:nth-child(odd){ color:#7fa1c6; }
+  pre { background:#0f141b; border:1px solid #263342; padding:10px; border-radius:8px; overflow:auto; max-height:240px; }
+  video { width:100%; border-radius:12px; border:1px solid #1b232d; background:#000; }
+  .pill { display:inline-block; padding:4px 8px; border:1px solid #263342; border-radius:999px; font-size:12px; color:#a9b8c9; }
+  .btnrow { display:flex; gap:8px; align-items:center; }
+  .ok { color:#8ff0a4; }
+  .warn { color:#ffdd88; }
+  .err { color:#ff9aa2; }
+</style>
 </head>
 <body>
-  <h1>Mirror Recorder — 10s</h1>
+  <header>
+    <strong>Camera Capabilities Dashboard</strong>
+    <span id="status" class="pill">idle</span>
+    <span id="fps" class="pill">FPS: —</span>
+  </header>
 
-  <!-- Mirrored preview (CSS only) -->
-  <video id="preview" autoplay muted playsinline></video>
-  <canvas id="mirrorCanvas"></canvas>
-  <div>
-    <button id="recordBtn">Start Recording (10 s)</button>
-    <span id="count"></span>
-  </div>
+  <main>
+    <!-- LEFT: Preview & quick controls -->
+    <section class="panel">
+      <h2>Preview</h2>
+      <video id="preview" autoplay playsinline muted></video>
+      <div class="btnrow" style="margin-top:10px">
+        <label class="pill"><input type="checkbox" id="mirror"> Mirror preview</label>
+        <label class="pill"><input type="checkbox" id="autofocus"> Continuous AF (if supported)</label>
+        <label class="pill"><input type="checkbox" id="torch"> Torch</label>
+      </div>
+
+      <h3>Choose Camera</h3>
+      <div class="row">
+        <select id="deviceSelect"></select>
+        <button id="openBtn">Open Camera</button>
+      </div>
+
+      <h3>Core Track Constraints</h3>
+      <div class="row">
+        <div>
+          <label>Width (ideal)</label>
+          <input type="number" id="w" min="160" value="1280">
+        </div>
+        <div>
+          <label>Height (ideal)</label>
+          <input type="number" id="h" min="120" value="720">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Frame rate (ideal)</label>
+          <input type="number" id="fpsIdeal" step="1" value="30">
+        </div>
+        <div>
+          <label>Exact constraints?</label>
+          <select id="exactness">
+            <option value="ideal" selected>Ideal</option>
+            <option value="exact">Exact</option>
+          </select>
+        </div>
+      </div>
+      <button id="applyTrack">Apply Track Constraints</button>
+
+      <h3>ImageCapture Controls (applied live)</h3>
+      <div id="icControls"></div>
+    </section>
+
+    <!-- RIGHT: Capabilities & settings dump -->
+    <section class="panel">
+      <h2>Capabilities & Settings</h2>
+      <div class="kv" id="quick">
+        <div>Device:</div><div id="q_device">—</div>
+        <div>Facing:</div><div id="q_facing">—</div>
+        <div>Resolution:</div><div id="q_res">—</div>
+        <div>FPS (target):</div><div id="q_fps">—</div>
+        <div>Torch:</div><div id="q_torch">—</div>
+      </div>
+
+      <h3>MediaTrackCapabilities</h3>
+      <pre id="capOut">—</pre>
+
+      <h3>MediaTrackSettings</h3>
+      <pre id="setOut">—</pre>
+
+      <h3>Supported Constraints</h3>
+      <pre id="supOut">—</pre>
+
+      <h3>ImageCapture.getPhotoCapabilities()</h3>
+      <pre id="icOut">—</pre>
+    </section>
+  </main>
 
 <script>
-(async function () {
-  const preview = document.getElementById('preview');
-  const canvas = document.getElementById('mirrorCanvas');
-  const ctx = canvas.getContext('2d');
-  const btn = document.getElementById('recordBtn');
-  const count = document.getElementById('count');
+(async function(){
+  const statusEl = document.getElementById('status');
+  const fpsEl = document.getElementById('fps');
+  const videoEl = document.getElementById('preview');
+  const deviceSel = document.getElementById('deviceSelect');
+  const openBtn = document.getElementById('openBtn');
+  const wEl = document.getElementById('w');
+  const hEl = document.getElementById('h');
+  const fpsIdealEl = document.getElementById('fpsIdeal');
+  const exactnessEl = document.getElementById('exactness');
+  const applyTrackBtn = document.getElementById('applyTrack');
+  const mirrorEl = document.getElementById('mirror');
+  const torchEl = document.getElementById('torch');
+  const afEl = document.getElementById('autofocus');
+
+  const capOut = document.getElementById('capOut');
+  const setOut = document.getElementById('setOut');
+  const supOut = document.getElementById('supOut');
+  const icOut = document.getElementById('icOut');
+
+  const q_device = document.getElementById('q_device');
+  const q_facing = document.getElementById('q_facing');
+  const q_res = document.getElementById('q_res');
+  const q_fps = document.getElementById('q_fps');
+  const q_torch = document.getElementById('q_torch');
+
+  const icControls = document.getElementById('icControls');
 
   let stream = null;
-  let recorder = null;
-  let drawLoop = null;
-  let chunks = [];
+  let track = null;
+  let imageCapture = null;
+  let fpsTimer = null;
+  let lastRAF = 0, frameCount = 0;
 
-  // Helper: draw the video onto canvas mirrored (so recorded frames are mirrored)
-  function startDrawing() {
-    // size canvas to match video
-    canvas.width = preview.videoWidth;
-    canvas.height = preview.videoHeight;
-
-    // draw loop
-    function draw() {
-      // clear
-      ctx.save();
-      // Mirror horizontally: scaleX(-1) and draw shifted
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
-      // draw video into canvas (mirrored)
-      ctx.drawImage(preview, 0, 0, canvas.width, canvas.height);
-      ctx.restore();
-      drawLoop = requestAnimationFrame(draw);
-    }
-    drawLoop = requestAnimationFrame(draw);
+  function logStatus(txt, cls='') {
+    statusEl.textContent = txt;
+    statusEl.className = 'pill ' + cls;
   }
 
-  function stopDrawing() {
-    if (drawLoop) {
-      cancelAnimationFrame(drawLoop);
-      drawLoop = null;
+  function ensureSecure() {
+    if (!window.isSecureContext) {
+      alert('This page must be opened via https:// or http://localhost for camera access.');
     }
   }
 
-  async function ensureStream() {
-    if (stream) return stream;
-    // Request camera + microphone (must be from secure origin / localhost)
-    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    preview.srcObject = stream;
+  async function listDevices() {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const cams = devs.filter(d => d.kind === 'videoinput');
+    deviceSel.innerHTML = '';
+    cams.forEach((d,i) => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || `Camera ${i+1}`;
+      deviceSel.appendChild(opt);
+    });
+  }
 
-    // Wait for video me
+  async function openCamera(deviceId=null) {
+    if (stream) {
+      stream.getTracks().forEach(t=>t.stop());
+      stream = null; track = null; imageCapture = null;
+    }
+    const ideal = (exactnessEl.value === 'ideal');
+    const widthC  = ideal ? {ideal: +wEl.value||undefined} : {exact: +wEl.value||undefined};
+    const heightC = ideal ? {ideal: +hEl.value||undefined} : {exact: +hEl.value||undefined};
+    const fpsC    = ideal ? {ideal: +fpsIdealEl.value||undefined} : {exact: +fpsIdealEl.value||undefined};
+
+    const constraints = {
+      video: {
+        deviceId: deviceId ? { exact: deviceId } : undefined,
+        width: widthC, height: heightC, frameRate: fpsC
+      },
+      audio: false
+    };
+
+    logStatus('Requesting…');
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+    videoEl.srcObject = stream;
+    track = stream.getVideoTracks()[0];
+
+    // ImageCapture (some Android devices support many options)
+    try {
+      imageCapture = new ImageCapture(track);
+      await imageCapture.getPhotoCapabilities(); // may throw if unsupported
+    } catch(e) {
+      imageCapture = null;
+    }
+
+    // mirror preview
+    applyMirror();
+
+    // update UIs
+    await updateInfo();
+    await buildImageCaptureControls(); // dynamic sliders for supported options
+
+    // start FPS sampler
+    startFpsMeter();
+
+    logStatus('open', 'ok');
+  }
+
+  function applyMirror() {
+    videoEl.style.transform = mirrorEl.checked ? 'scaleX(-1)' : 'none';
+  }
+
+  // FPS measurement via rAF
+  function startFpsMeter() {
+    if (fpsTimer) cancelAnimationFrame(fpsTimer);
+    frameCount = 0; lastRAF = performance.now();
+    const tick = (t) => {
+      frameCount++;
+      const dt = t - lastRAF;
+      if (dt >= 1000) {
+        const fps = Math.round((frameCount * 1000) / dt);
+        fpsEl.textContent = `FPS: ${fps}`;
+        frameCount = 0; lastRAF = t;
+      }
+      fpsTimer = requestAnimationFrame(tick);
+    };
+    fpsTimer = requestAnimationFrame(tick);
+  }
+
+  async function updateInfo() {
+    if (!track) return;
+    const caps = track.getCapabilities?.();
+    const sets = track.getSettings?.();
+    const sup  = navigator.mediaDevices.getSupportedConstraints?.();
+
+    capOut.textContent = caps ? JSON.stringify(caps, null, 2) : '—';
+    setOut.textContent = sets ? JSON.stringify(sets, null, 2) : '—';
+    supOut.textContent = sup ? JSON.stringify(sup, null, 2) : '—';
+
+    q_device.textContent = track.label || '(unknown)';
+    q_facing.textContent = sets?.facingMode || '—';
+    q_res.textContent = sets?.width && sets?.height ? `${sets.width}×${sets.height}` : '—';
+    q_fps.textContent = (sets?.frameRate ? sets.frameRate.toFixed(2) : '—');
+    q_torch.textContent = caps?.torch ? 'supported' : 'no';
+
+    // ImageCapture capabilities
+    if (imageCapture) {
+      try {
+        const icCaps = await imageCapture.getPhotoCapabilities();
+        icOut.textContent = JSON.stringify(icCaps, null, 2);
+      } catch (e) {
+        icOut.textContent = 'ImageCapture not supported here.';
+      }
+    } else {
+      icOut.textContent = 'ImageCapture not supported here.';
+    }
+  }
+
+  // Helpers to add UI controls for ImageCapture
+  function addRangeControl(parent, labelText, cap, getterName, setterName, optionKey) {
+    if (!cap || typeof cap.min !== 'number' || typeof cap.max !== 'number') return;
+    const label = document.createElement('label');
+    label.textContent = `${labelText} (${cap.min}..${cap.max}${cap.step?` step ${cap.step}`:''})`;
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = cap.min;
+    input.max = cap.max;
+    input.step = cap.step || 1;
+    input.value = cap.current ?? cap.min;
+    input.addEventListener('input', async () => {
+      try {
+        const opts = {}; opts[optionKey] = Number(input.value);
+        await imageCapture.setOptions(opts);
+        await updateInfo();
+      } catch(e) { console.warn('setOptions failed for', optionKey, e); }
+    });
+    parent.appendChild(label);
+    parent.appendChild(input);
+  }
+
+  function addEnumControl(parent, labelText, values, optionKey) {
+    if (!values || !values.length) return;
+    const label = document.createElement('label');
+    label.textContent = labelText;
+    const sel = document.createElement('select');
+    values.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v; opt.textContent = v;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener('change', async () => {
+      try {
+        const opts = {}; opts[optionKey] = sel.value;
+        await imageCapture.setOptions(opts);
+        await updateInfo();
+      } catch(e) { console.warn('setOptions failed for', optionKey, e); }
+    });
+    parent.appendChild(label);
+    parent.appendChild(sel);
+  }
+
+  async function buildImageCaptureControls() {
+    icControls.innerHTML = '';
+    if (!imageCapture) {
+      const p = document.createElement('div');
+      p.textContent = 'No ImageCapture controls available on this device.';
+      icControls.appendChild(p);
+      return;
+    }
+    try {
+      const caps = await imageCapture.getPhotoCapabilities();
+
+      // torch (also mirrored via checkbox)
+      if (typeof caps.torch === 'boolean') {
+        torchEl.disabled = false;
+      } else {
+        torchEl.disabled = true;
+      }
+
+      // Common ranges
+      addRangeControl(icControls, 'Zoom', caps.zoom, null, null, 'zoom');
+      addRangeControl(icControls, 'Focus distance', caps.focusDistance, null, null, 'focusDistance');
+      addRangeControl(icControls, 'Exposure compensation', caps.exposureCompensation, null, null, 'exposureCompensation');
+      addRangeControl(icControls, 'Color temperature', caps.colorTemperature, null, null, 'colorTemperature');
+      addRangeControl(icControls, 'ISO', caps.iso, null, null, 'iso');
+      addRangeControl(icControls, 'Brightness', caps.brightness, null, null, 'brightness');
+      addRangeControl(icControls, 'Contrast', caps.contrast, null, null, 'contrast');
+      addRangeControl(icControls, 'Saturation', caps.saturation, null, null, 'saturation');
+      addRangeControl(icControls, 'Sharpness', caps.sharpness, null, null, 'sharpness');
+
+      // Enums / modes
+      addEnumControl(icControls, 'Focus mode', caps.focusMode?.supported || [], 'focusMode');
+      addEnumControl(icControls, 'White balance mode', caps.whiteBalanceMode?.supported || [], 'whiteBalanceMode');
+      addEnumControl(icControls, 'Exposure mode', caps.exposureMode?.supported || [], 'exposureMode');
+      addEnumControl(icControls, 'Red-eye reduction', caps.redEyeReduction?.supported || [], 'redEyeReduction');
+
+    } catch (e) {
+      icControls.textContent = 'ImageCapture capability query failed.';
+      console.warn(e);
+    }
+  }
+
+  // Apply track constraints from the left panel
+  async function applyTrackConstraints() {
+    if (!track) return;
+    const ideal = (exactnessEl.value === 'ideal');
+    const cs = {};
+    const w = +wEl.value || undefined;
+    const h = +hEl.value || undefined;
+    const f = +fpsIdealEl.value || undefined;
+    if (w) cs.width = ideal ? { ideal: w } : { exact: w };
+    if (h) cs.height = ideal ? { ideal: h } : { exact: h };
+    if (f) cs.frameRate = ideal ? { ideal: f } : { exact: f };
+
+    logStatus('Applying constraints…');
+    try {
+      await track.applyConstraints(cs);
+      logStatus('constraints applied', 'ok');
+    } catch (e) {
+      logStatus('constraints failed', 'err');
+      alert('applyConstraints() failed: ' + e.message);
+    }
+    await updateInfo();
+  }
+
+  // Torch & AF toggles via ImageCapture (where supported)
+  torchEl.addEventListener('change', async () => {
+    if (!imageCapture) return;
+    try {
+      await imageCapture.setOptions({ torch: torchEl.checked });
+      await updateInfo();
+    } catch (e) { console.warn('torch setOptions failed', e); }
+  });
+  afEl.addEventListener('change', async () => {
+    if (!imageCapture) return;
+    try {
+      const mode = afEl.checked ? 'continuous' : 'manual';
+      await imageCapture.setOptions({ focusMode: mode });
+      await updateInfo();
+    } catch (e) { console.warn('focusMode setOptions failed', e); }
+  });
+
+  mirrorEl.addEventListener('change', applyMirror);
+  applyTrackBtn.addEventListener('click', applyTrackConstraints);
+  openBtn.addEventListener('click', async () => {
+    await openCamera(deviceSel.value || null);
+  });
+
+  // Populate devices then open default camera
+  ensureSecure();
+  await listDevices();
+  // First open with generic constraints to get labels; then refresh device list with labels
+  try {
+    await openCamera();
+    await listDevices();
+  } catch (e) {
+    logStatus('error', 'err');
+    alert('Failed to open camera: ' + e.message + '\nOpen this over https:// or http://localhost and allow camera access.');
+  }
+
+  // React to device changes (e.g., plugging a new webcam)
+  navigator.mediaDevices.addEventListener('devicechange', listDevices);
+})();
+</script>
+</body>
+</html>
