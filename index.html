@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>10-second Video Recorder</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; margin-top: 2em; }
+    video { border: 1px solid #ccc; width: 480px; height: 360px; }
+    button { margin-top: 1em; padding: 0.5em 1em; }
+  </style>
+</head>
+<body>
+  <h1>Record 10 Seconds of Video</h1>
+  <video id="preview" autoplay muted></video><br>
+  <button id="recordBtn">Start Recording (10 s)</button>
+
+  <script>
+    const video = document.getElementById('preview');
+    const btn = document.getElementById('recordBtn');
+
+    let stream, recorder, chunks = [];
+
+    btn.onclick = async () => {
+      btn.disabled = true;
+      btn.textContent = 'Recording…';
+
+      // Get webcam video (and optionally mic)
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      video.srcObject = stream;
+
+      recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
+
+      recorder.ondataavailable = e => chunks.push(e.data);
+
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+
+        // Create a download link automatically
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'recorded_video.webm';
+        a.click();
+
+        // Cleanup
+        URL.revokeObjectURL(url);
+        stream.getTracks().forEach(t => t.stop());
+        btn.disabled = false;
+        btn.textContent = 'Start Recording (10 s)';
+        chunks = [];
+      };
+
+      recorder.start();
+      console.log('Recording started');
+
+      // Stop after 10 seconds
+      setTimeout(() => recorder.stop(), 10_000);
+    };
+  </script>
+</body>
+</html>
