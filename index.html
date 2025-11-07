@@ -1,61 +1,73 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>10-second Video Recorder</title>
+  <meta charset="utf-8" />
+  <title>Mirror Recorder — 10s</title>
   <style>
-    body { font-family: sans-serif; text-align: center; margin-top: 2em; }
-    video { border: 1px solid #ccc; width: 480px; height: 360px; }
-    button { margin-top: 1em; padding: 0.5em 1em; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; text-align:center; padding:20px; }
+    #preview { border:1px solid #ccc; width:480px; height:360px; /* mirrored visually */ transform: scaleX(-1); -webkit-transform: scaleX(-1); }
+    canvas { display:none; } /* hidden: used for recording */
+    button { margin-top:12px; padding:8px 14px; font-size:16px; }
+    #count { font-weight:600; margin-left:10px; }
   </style>
 </head>
 <body>
-  <h1>Record 10 Seconds of Video</h1>
-  <video id="preview" autoplay muted></video><br>
-  <button id="recordBtn">Start Recording (10 s)</button>
+  <h1>Mirror Recorder — 10s</h1>
 
-  <script>
-    const video = document.getElementById('preview');
-    const btn = document.getElementById('recordBtn');
+  <!-- Mirrored preview (CSS only) -->
+  <video id="preview" autoplay muted playsinline></video>
+  <canvas id="mirrorCanvas"></canvas>
+  <div>
+    <button id="recordBtn">Start Recording (10 s)</button>
+    <span id="count"></span>
+  </div>
 
-    let stream, recorder, chunks = [];
+<script>
+(async function () {
+  const preview = document.getElementById('preview');
+  const canvas = document.getElementById('mirrorCanvas');
+  const ctx = canvas.getContext('2d');
+  const btn = document.getElementById('recordBtn');
+  const count = document.getElementById('count');
 
-    btn.onclick = async () => {
-      btn.disabled = true;
-      btn.textContent = 'Recording…';
+  let stream = null;
+  let recorder = null;
+  let drawLoop = null;
+  let chunks = [];
 
-      // Get webcam video (and optionally mic)
-      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      video.srcObject = stream;
+  // Helper: draw the video onto canvas mirrored (so recorded frames are mirrored)
+  function startDrawing() {
+    // size canvas to match video
+    canvas.width = preview.videoWidth;
+    canvas.height = preview.videoHeight;
 
-      recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
+    // draw loop
+    function draw() {
+      // clear
+      ctx.save();
+      // Mirror horizontally: scaleX(-1) and draw shifted
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+      // draw video into canvas (mirrored)
+      ctx.drawImage(preview, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
+      drawLoop = requestAnimationFrame(draw);
+    }
+    drawLoop = requestAnimationFrame(draw);
+  }
 
-      recorder.ondataavailable = e => chunks.push(e.data);
+  function stopDrawing() {
+    if (drawLoop) {
+      cancelAnimationFrame(drawLoop);
+      drawLoop = null;
+    }
+  }
 
-      recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
+  async function ensureStream() {
+    if (stream) return stream;
+    // Request camera + microphone (must be from secure origin / localhost)
+    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    preview.srcObject = stream;
 
-        // Create a download link automatically
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'recorded_video.webm';
-        a.click();
-
-        // Cleanup
-        URL.revokeObjectURL(url);
-        stream.getTracks().forEach(t => t.stop());
-        btn.disabled = false;
-        btn.textContent = 'Start Recording (10 s)';
-        chunks = [];
-      };
-
-      recorder.start();
-      console.log('Recording started');
-
-      // Stop after 10 seconds
-      setTimeout(() => recorder.stop(), 10_000);
-    };
-  </script>
-</body>
-</html>
+    // Wait for video me
